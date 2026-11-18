@@ -6,7 +6,7 @@ import psycopg
 from psycopg.rows import dict_row
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddlewareuvicorn main:app --reload
 from pydantic import BaseModel, Field
 
 load_dotenv()
