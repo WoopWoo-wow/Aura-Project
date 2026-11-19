@@ -10,13 +10,13 @@ df = pd.read_csv('student_sleep_patterns.csv')
 
 # 2. Keep only the core columns we need
 features = [
-    'Sleep_Duration', 
-    'Study_Hours', 
-    'Screen_Time', 
-    'Caffeine_Intake', 
-    'Weekday_Sleep_Start'
+    'Sleep_Duration',
+    'Study_Hours',
+    'Screen_Time',
+    'Caffeine_Intake',
+    'Sleep_Quality'
 ]
-df_clean = df[features + ['Sleep_Quality']].copy()
+df_clean = df[features].copy()
 
 # 3. Enrich with Davao City Temperature (°C) for System Integration alignment
 np.random.seed(42)

@@ -3,3 +3,8 @@ uvicorn
 psycopg[binary]
 python-dotenv
 pydantic
+pandas
+numpy
+scikit-learn
+joblib
+httpx

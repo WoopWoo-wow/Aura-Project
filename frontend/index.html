@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AURA — Student Burnout & Productivity Companion</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <!-- ==================== 1. LOGIN / SIGNUP SCREEN ==================== -->
+  <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+      <div class="text-center mb-6">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500/40 text-3xl mb-3">
+          😤
+        </div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">AURA</h1>
+        <p class="text-sm text-slate-400 mt-1">"D-Don't keep me waiting. Log in already!"</p>
+      </div>
+
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1">Username</label>
+          <input id="login-username" type="text" required placeholder="e.g. demo"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-white focus:outline-none focus:border-rose-500" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1">Password</label>
+          <input id="login-password" type="password" required placeholder="••••••••"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-white focus:outline-none focus:border-rose-500" />
+        </div>
+        <p id="auth-error" class="text-xs text-rose-400 hidden"></p>
+        <button type="submit"
+          class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2.5 rounded-lg transition cursor-pointer">
+          Enter Dashboard
+        </button>
+      </form>
+      <p class="text-xs text-slate-500 text-center mt-4">
+        New username? AURA will introduce herself first. Existing username? Welcome back.
+      </p>
+    </div>
+  </div>
+
+  <!-- ==================== 2. NEW USER ONBOARDING MODAL ==================== -->
+  <div id="onboarding-screen" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-rose-500/40 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="text-4xl">😒</span>
+        <div>
+          <span class="text-xs uppercase tracking-wider text-rose-400 font-semibold">First-Time Check-In</span>
+          <h2 class="text-lg font-bold text-white">"Hmph. A new face?"</h2>
+        </div>
+      </div>
+      <p class="text-sm text-slate-300 mb-5">
+        "I-It's not like I want to know your life story or anything! Just tell me the basics so I can keep track of your terrible sleep schedule."
+      </p>
+
+      <form id="onboarding-form" class="space-y-4">
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1">What should I call you?</label>
+          <input id="ob-name" type="text" required placeholder="Your first name or nickname"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:border-rose-500" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1">
+            Daily Sleep Target: <span id="ob-target-val" class="text-rose-400 font-bold">8.0</span> hrs
+          </label>
+          <input id="ob-target" type="range" min="6" max="10" step="0.5" value="8"
+            class="w-full accent-rose-500" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-slate-400 mb-1">Your Worst Study Habit</label>
+          <select id="ob-habit"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:border-rose-500">
+            <option value="all-nighters">Pulling last-minute all-nighters</option>
+            <option value="caffeine">Replacing sleep with iced coffee</option>
+            <option value="scrolling">Doomscrolling in bed until 3 AM</option>
+          </select>
+        </div>
+        <button type="submit"
+          class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2.5 rounded-lg transition cursor-pointer">
+          Start Tracking
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== 3. MAIN INTERACTIVE DASHBOARD ==================== -->
+  <div id="dashboard-screen" class="hidden max-w-6xl mx-auto p-4 md:p-6 space-y-6">
+
+    <!-- Top Navigation & Live Davao Weather Bar -->
+    <header class="flex flex-wrap items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl font-bold text-rose-500">AURA</span>
+        <span id="greeting-badge" class="text-sm text-slate-300 bg-slate-800 px-3 py-1 rounded-full"></span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Weather Pill + Simulator -->
+        <div class="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-sm">
+          <span id="weather-icon">☀️</span>
+          <span>Davao City: <strong id="weather-temp" class="text-amber-300">31.0°C</strong></span>
+          <span id="heat-tag" class="hidden text-[10px] uppercase bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">
+            Heat Alert
+          </span>
+          <select id="weather-override" title="Simulate Davao Weather"
+            class="bg-slate-900 text-xs text-slate-300 border border-slate-700 rounded px-1.5 py-0.5 ml-1">
+            <option value="live">Live API</option>
+            <option value="34.2">Hot (34.2°C)</option>
+            <option value="26.5">Cool/Rainy (26.5°C)</option>
+          </select>
+        </div>
+
+        <!-- Affection Meter -->
+        <div class="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-sm">
+          <span>💖 Affection: <strong id="affection-pts">5</strong> pts</span>
+          <span id="affection-tier" class="text-xs uppercase px-2 py-0.5 rounded bg-slate-700 text-slate-200 font-semibold">
+            Neutral
+          </span>
+        </div>
+
+        <button id="logout-btn"
+          class="text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl transition cursor-pointer">
+          Switch User
+        </button>
+      </div>
+    </header>
+
+    <!-- Main 2-Column Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: AURA Companion Box + Result Card (5 cols) -->
+      <div class="lg:col-span-5 space-y-6">
+
+        <!-- AURA Persona Card -->
+        <div id="aura-card"
+          class="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 transition-all cursor-pointer select-none"
+          title="Click AURA for a study tip!">
+          <div class="flex items-center gap-4 mb-4">
+            <div id="aura-avatar"
+              class="w-20 h-20 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-5xl shadow-inner">
+              😒
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-bold text-white">AURA</h2>
+                <span id="mood-pill" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-rose-300 font-medium">
+                  neutral
+                </span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">Click me if you need a tip... not that I care!</p>
+            </div>
+          </div>
+
+          <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 relative">
+            <p id="aura-message" class="text-sm leading-relaxed text-slate-100">
+              "Hmph. You're finally here. Log your sleep and study hours so I can see how badly you're managing your time."
+            </p>
+          </div>
+        </div>
+
+        <!-- Burnout Risk & Smart Recommendation Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Burnout Risk Analysis</h3>
+            <span id="risk-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300">
+              Awaiting Check-In
+            </span>
+          </div>
+
+          <!-- Probability Bars -->
+          <div class="space-y-2 text-xs">
+            <div>
+              <div class="flex justify-between mb-1"><span>Low Risk</span><span id="prob-low">0%</span></div>
+              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div id="bar-low" class="bg-emerald-500 h-full transition-all" style="width: 0%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span>Moderate Risk</span><span id="prob-mod">0%</span></div>
+              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div id="bar-mod" class="bg-amber-400 h-full transition-all" style="width: 0%"></div>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between mb-1"><span>High Risk</span><span id="prob-high">0%</span></div>
+              <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div id="bar-high" class="bg-rose-500 h-full transition-all" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Smart Schedule Recommendation -->
+          <div class="pt-3 border-t border-slate-800 grid grid-cols-2 gap-3 text-xs">
+            <div class="bg-slate-800/60 p-3 rounded-xl">
+              <span class="text-slate-400 block">Target Bedtime</span>
+              <strong id="rec-bedtime" class="text-sm text-indigo-300">10:30 PM</strong>
+            </div>
+            <div class="bg-slate-800/60 p-3 rounded-xl">
+              <span class="text-slate-400 block">Best Study Window</span>
+              <strong id="rec-study" class="text-sm text-emerald-300">8:00 AM – 11:00 AM</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Daily Check-In Form + 7-Day Chart (7 cols) -->
+      <div class="lg:col-span-7 space-y-6">
+
+        <!-- Interactive Daily Check-In Form -->
+        <form id="checkin-form" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-white">Daily Habit Check-In</h3>
+            <span class="text-xs text-slate-400">7-Day Sleep Debt: <strong id="sleep-debt-val" class="text-rose-400">0.0h</strong></span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <!-- Sleep Duration -->
+            <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              <div class="flex justify-between text-sm mb-2">
+                <label>Sleep Duration</label>
+                <span class="font-bold text-indigo-400"><span id="val-sleep">6.5</span> hrs</span>
+              </div>
+              <input id="in-sleep" type="range" min="0" max="14" step="0.5" value="6.5" class="w-full accent-indigo-500" />
+            </div>
+
+            <!-- Sleep Quality -->
+            <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              <div class="flex justify-between text-sm mb-2">
+                <label>Sleep Quality (1–10)</label>
+                <span class="font-bold text-emerald-400"><span id="val-quality">6</span> / 10</span>
+              </div>
+              <input id="in-quality" type="range" min="1" max="10" step="1" value="6" class="w-full accent-emerald-500" />
+            </div>
+
+            <!-- Study Hours -->
+            <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              <div class="flex justify-between text-sm mb-2">
+                <label>Study Hours</label>
+                <span class="font-bold text-amber-400"><span id="val-study">5.0</span> hrs</span>
+              </div>
+              <input id="in-study" type="range" min="0" max="16" step="0.5" value="5.0" class="w-full accent-amber-500" />
+            </div>
+
+            <!-- Screen Time -->
+            <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              <div class="flex justify-between text-sm mb-2">
+                <label>Screen Time</label>
+                <span class="font-bold text-sky-400"><span id="val-screen">4.5</span> hrs</span>
+              </div>
+              <input id="in-screen" type="range" min="0" max="16" step="0.5" value="4.5" class="w-full accent-sky-500" />
+            </div>
+          </div>
+
+          <!-- Interactive Caffeine Cup Selector -->
+          <div class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span class="text-sm block">Caffeine Intake</span>
+              <span class="text-xs text-slate-400">Click cups to adjust (0–10)</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" id="caf-minus" class="w-8 h-8 rounded-lg bg-slate-700 hover:bg-slate-600 font-bold cursor-pointer">-</button>
+              <span id="caf-cups-display" class="text-lg tracking-widest px-2">☕☕</span>
+              <span class="text-sm font-bold text-amber-300">(<span id="val-caffeine">2</span> cups)</span>
+              <button type="button" id="caf-plus" class="w-8 h-8 rounded-lg bg-slate-700 hover:bg-slate-600 font-bold cursor-pointer">+</button>
+            </div>
+          </div>
+
+          <button type="submit"
+            class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-rose-950/50 transition cursor-pointer">
+            Analyze My Day
+          </button>
+        </form>
+
+        <!-- 7-Day Sleep & Debt Chart -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-bold text-white">7-Day Sleep & Debt Trend</h3>
+            <span id="weekly-avg-insight" class="text-xs text-slate-400">Avg Sleep: -- hrs</span>
+          </div>
+          <canvas id="sleepChart" height="120"></canvas>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---- STATE & STORAGE ----
+    const STORAGE_KEY = "aura_frontend_users_v1";
+    let currentUser = null;
+    let liveDavaoTemp = 31.0;
+    let caffeineCount = 2;
+    let chartInstance = null;
+
+    const MOOD_CONFIG = {
+      flustered_praise: { avatar: "😳", border: "border-pink-500", label: "flustered praise" },
+      neutral:          { avatar: "😒", border: "border-slate-600", label: "neutral" },
+      worried:          { avatar: "😟", border: "border-amber-500", label: "worried" },
+      annoyed:          { avatar: "😤", border: "border-orange-500", label: "annoyed" },
+      strict:           { avatar: "💢", border: "border-rose-600", label: "strict" }
+    };
+
+    const POKE_TIPS = [
+      "Drink a glass of water before reaching for another coffee, idiot.",
+      "Screens off 45 minutes before bed. Blue light ruins your sleep quality.",
+      "Davao heat drains your energy faster—don't study in a stuffy room!",
+      "A 20-minute power nap beats a 3-hour doomscroll session."
+    ];
+
+    function loadUsers() {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    }
+
+    function saveUsers(users) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+    }
+
+    // ---- LIVE OPEN-METEO DAVAO WEATHER ----
+    async function fetchDavaoWeather() {
+      try {
+        const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=7.1907&longitude=125.4553&current=temperature_2m");
+        const data = await res.json();
+        liveDavaoTemp = data.current.temperature_2m;
+      } catch {
+        liveDavaoTemp = 31.0;
+      }
+      updateWeatherUI();
+    }
+
+    function getActiveTemp() {
+      const override = document.getElementById("weather-override").value;
+      return override === "live" ? liveDavaoTemp : parseFloat(override);
+    }
+
+    function updateWeatherUI() {
+      const temp = getActiveTemp();
+      document.getElementById("weather-temp").textContent = `${temp.toFixed(1)}°C`;
+      document.getElementById("weather-icon").textContent = temp >= 32 ? "🔥" : temp <= 27 ? "🌧️" : "☀️";
+      document.getElementById("heat-tag").classList.toggle("hidden", temp < 32);
+    }
+
+    document.getElementById("weather-override").addEventListener("change", updateWeatherUI);
+
+    // ---- AUTH & ONBOARDING FLOW ----
+    document.getElementById("login-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const username = document.getElementById("login-username").value.trim().toLowerCase();
+      const password = document.getElementById("login-password").value;
+      const errEl = document.getElementById("auth-error");
+
+      const users = loadUsers();
+      if (users[username]) {
+        if (users[username].password !== password) {
+          errEl.textContent = "Hmph. Wrong password! Try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        errEl.classList.add("hidden");
+        currentUser = users[username];
+        enterDashboard(false);
+      } else {
+        // New user -> show onboarding
+        errEl.classList.add("hidden");
+        currentUser = {
+          username,
+          password,
+          displayName: username,
+          targetSleep: 8.0,
+          habit: "all-nighters",
+          affection: 5,
+          mood: "neutral",
+          history: [
+            { day: "Mon", sleep: 6.5, debt: 1.5 },
+            { day: "Tue", sleep: 7.0, debt: 2.5 },
+            { day: "Wed", sleep: 5.5, debt: 5.0 },
+            { day: "Thu", sleep: 6.0, debt: 7.0 },
+            { day: "Fri", sleep: 7.5, debt: 7.5 },
+            { day: "Sat", sleep: 8.0, debt: 7.5 }
+          ]
+        };
+        document.getElementById("auth-screen").classList.add("hidden");
+        document.getElementById("onboarding-screen").classList.remove("hidden");
+      }
+    });
+
+    document.getElementById("ob-target").addEventListener("input", (e) => {
+      document.getElementById("ob-target-val").textContent = parseFloat(e.target.value).toFixed(1);
+    });
+
+    document.getElementById("onboarding-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      currentUser.displayName = document.getElementById("ob-name").value.trim();
+      currentUser.targetSleep = parseFloat(document.getElementById("ob-target").value);
+      currentUser.habit = document.getElementById("ob-habit").value;
+
+      const users = loadUsers();
+      users[currentUser.username] = currentUser;
+      saveUsers(users);
+
+      document.getElementById("onboarding-screen").classList.add("hidden");
+      enterDashboard(true);
+    });
+
+    document.getElementById("logout-btn").addEventListener("click", () => {
+      currentUser = null;
+      document.getElementById("dashboard-screen").classList.add("hidden");
+      document.getElementById("auth-screen").classList.remove("hidden");
+      document.getElementById("login-password").value = "";
+    });
+
+    function enterDashboard(isNewUser) {
+      document.getElementById("auth-screen").classList.add("hidden");
+      document.getElementById("dashboard-screen").classList.remove("hidden");
+
+      const habitRemarks = {
+        "all-nighters": "No more last-minute all-nighters on my watch!",
+        "caffeine": "And put down the extra iced coffee!",
+        "scrolling": "And stop doomscrolling in bed!"
+      };
+
+      document.getElementById("greeting-badge").textContent = isNewUser
+        ? `Welcome, ${currentUser.displayName}!`
+        : `Welcome back, ${currentUser.displayName}`;
+
+      document.getElementById("aura-message").textContent = isNewUser
+        ? `"Alright, ${currentUser.displayName}. Target is ${currentUser.targetSleep}h of sleep. ${habitRemarks[currentUser.habit]} Log today's check-in now!"`
+        : `"You're back, ${currentUser.displayName}. Did you actually hit your ${currentUser.targetSleep}h sleep target, or are you slacking off again?"`;
+
+      updateAuraCard(currentUser.mood, currentUser.affection);
+      renderChart();
+    }
+
+    // ---- INTERACTIVE SLIDERS & CAFFEINE ----
+    const sliderBindings = [
+      ["in-sleep", "val-sleep", (v) => parseFloat(v).toFixed(1)],
+      ["in-quality", "val-quality", (v) => v],
+      ["in-study", "val-study", (v) => parseFloat(v).toFixed(1)],
+      ["in-screen", "val-screen", (v) => parseFloat(v).toFixed(1)]
+    ];
+
+    sliderBindings.forEach(([inId, valId, fmt]) => {
+      document.getElementById(inId).addEventListener("input", (e) => {
+        document.getElementById(valId).textContent = fmt(e.target.value);
+        if (inId === "in-sleep" && parseFloat(e.target.value) < 5) {
+          document.getElementById("aura-message").textContent = `"U-Under 5 hours?! Are you trying to pass out in class?!"`;
+        }
+      });
+    });
+
+    function updateCaffeineUI() {
+      document.getElementById("val-caffeine").textContent = caffeineCount;
+      document.getElementById("caf-cups-display").textContent = caffeineCount === 0 ? "💧" : "☕".repeat(Math.min(caffeineCount, 6)) + (caffeineCount > 6 ? "+" : "");
+    }
+    document.getElementById("caf-minus").addEventListener("click", () => { if (caffeineCount > 0) { caffeineCount--; updateCaffeineUI(); } });
+    document.getElementById("caf-plus").addEventListener("click", () => { if (caffeineCount < 10) { caffeineCount++; updateCaffeineUI(); } });
+
+    // Poke AURA for tips
+    document.getElementById("aura-card").addEventListener("click", () => {
+      const tip = POKE_TIPS[Math.floor(Math.random() * POKE_TIPS.length)];
+      document.getElementById("aura-message").textContent = `"H-Hey, don't just poke me! ...Fine, here's a tip: ${tip}"`;
+    });
+
+    // ---- CHECK-IN SUBMISSION (SIMULATED ML + TRIGGERS; SWAP WITH FETCH LATER) ----
+    document.getElementById("checkin-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const sleep = parseFloat(document.getElementById("in-sleep").value);
+      const quality = parseInt(document.getElementById("in-quality").value, 10);
+      const study = parseFloat(document.getElementById("in-study").value);
+      const screen = parseFloat(document.getElementById("in-screen").value);
+      const temp = getActiveTemp();
+
+      // Mirrors train_model.py burnout heuristic
+      let score = 0;
+      if (sleep < 5.5) score += 2; else if (sleep < 7.0) score += 1;
+      if (quality <= 4) score += 2; else if (quality <= 6) score += 1;
+      if (temp >= 32.0 && sleep < 6.5) score += 1;
+      if (study > 6.0 || caffeineCount >= 3) score += 1;
+
+      const riskLevel = score >= 4 ? 2 : score >= 2 ? 1 : 0;
+      const probs = riskLevel === 2 ? [5, 23, 72] : riskLevel === 1 ? [18, 64, 18] : [78, 17, 5];
+
+      // Update rolling sleep debt & mood
+      const todayDebt = Math.max(currentUser.targetSleep - sleep, 0);
+      const prevDebt = currentUser.history.slice(-6).reduce((acc, d) => acc + Math.max(currentUser.targetSleep - d.sleep, 0), 0);
+      const totalDebt = +(prevDebt + todayDebt).toFixed(1);
+
+      let mood = "strict";
+      if (sleep >= currentUser.targetSleep && totalDebt <= 1) mood = "flustered_praise";
+      else if (totalDebt <= 3) mood = "neutral";
+      else if (totalDebt <= 6) mood = "worried";
+      else if (totalDebt <= 10) mood = "annoyed";
+
+      if (sleep >= currentUser.targetSleep) currentUser.affection += 2;
+      if (riskLevel === 0) currentUser.affection += 1;
+      currentUser.mood = mood;
+
+      // Update today's entry in 7-day history
+      const todayLabel = "Today";
+      const existingIdx = currentUser.history.findIndex(h => h.day === todayLabel);
+      if (existingIdx >= 0) currentUser.history[existingIdx] = { day: todayLabel, sleep, debt: totalDebt };
+      else currentUser.history.push({ day: todayLabel, sleep, debt: totalDebt });
+      if (currentUser.history.length > 7) currentUser.history.shift();
+
+      const users = loadUsers();
+      users[currentUser.username] = currentUser;
+      saveUsers(users);
+
+      // Update UI
+      document.getElementById("sleep-debt-val").textContent = `${totalDebt}h`;
+      updateAuraCard(mood, currentUser.affection);
+
+      const riskLabels = ["Low Risk", "Moderate Risk", "High Risk"];
+      const riskColors = ["bg-emerald-500/20 text-emerald-300", "bg-amber-500/20 text-amber-300", "bg-rose-500/20 text-rose-300"];
+      const badge = document.getElementById("risk-badge");
+      badge.textContent = riskLabels[riskLevel];
+      badge.className = `px-3 py-1 rounded-full text-xs font-bold ${riskColors[riskLevel]}`;
+
+      document.getElementById("prob-low").textContent = `${probs[0]}%`;
+      document.getElementById("bar-low").style.width = `${probs[0]}%`;
+      document.getElementById("prob-mod").textContent = `${probs[1]}%`;
+      document.getElementById("bar-mod").style.width = `${probs[1]}%`;
+      document.getElementById("prob-high").textContent = `${probs[2]}%`;
+      document.getElementById("bar-high").style.width = `${probs[2]}%`;
+
+      document.getElementById("rec-bedtime").textContent = riskLevel === 2 ? "9:45 PM (Recovery)" : "10:30 PM";
+      document.getElementById("rec-study").textContent = temp >= 32 ? "7:30 AM – 10:30 AM (Beat Heat)" : "9:00 AM – 12:00 PM";
+
+      const reactions = {
+        2: `"H-Hmph! ${sleep}h of sleep and ${caffeineCount} cups of coffee at ${temp}°C?! Your burnout risk is HIGH, ${currentUser.displayName}! Sleep early tonight!"`,
+        1: `"Moderate risk... ${sleep}h of sleep isn't terrible, ${currentUser.displayName}, but don't push your luck tonight."`,
+        0: `"L-Low risk! ${sleep}h of sleep... good job, ${currentUser.displayName}. I-It's not like I was cheering for you or anything!"`
+      };
+      document.getElementById("aura-message").textContent = reactions[riskLevel];
+
+      renderChart();
+    });
+
+    function updateAuraCard(mood, points) {
+      const cfg = MOOD_CONFIG[mood] || MOOD_CONFIG.neutral;
+      const card = document.getElementById("aura-card");
+      card.className = `bg-slate-900 border-2 ${cfg.border} rounded-2xl p-6 transition-all cursor-pointer select-none`;
+      document.getElementById("aura-avatar").textContent = cfg.avatar;
+      document.getElementById("mood-pill").textContent = cfg.label;
+
+      document.getElementById("affection-pts").textContent = points;
+      const tier = points <= 4 ? "Cold" : points <= 14 ? "Neutral" : "Warm";
+      document.getElementById("affection-tier").textContent = tier;
+    }
+
+    function renderChart() {
+      const ctx = document.getElementById("sleepChart").getContext("2d");
+      const labels = currentUser.history.map(h => h.day);
+      const sleepData = currentUser.history.map(h => h.sleep);
+      const debtData = currentUser.history.map(h => h.debt);
+
+      const avg = (sleepData.reduce((a, b) => a + b, 0) / sleepData.length).toFixed(1);
+      document.getElementById("weekly-avg-insight").textContent = `Avg Sleep: ${avg} hrs`;
+
+      if (chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Hours Slept",
+              data: sleepData,
+              borderColor: "#818cf8",
+              backgroundColor: "rgba(129, 140, 248, 0.15)",
+              tension: 0.35,
+              fill: true
+            },
+            {
+              label: "Cumulative Sleep Debt",
+              data: debtData,
+              borderColor: "#fb7185",
+              borderDash: [5, 5],
+              tension: 0.35
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: "#cbd5e1" } } },
+          scales: {
+            x: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } },
+            y: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Boot weather on load
+    fetchDavaoWeather();
+  </script>
+</body>
+</html>
