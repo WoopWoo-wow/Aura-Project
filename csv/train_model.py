@@ -23,7 +23,7 @@ np.random.seed(42)
 df_clean['Temperature_C'] = np.round(np.random.uniform(26.0, 35.0, size=len(df_clean)), 1)
 
 # 4. Create the Target Variable: Burnout_Risk (0 = Low, 1 = Moderate, 2 = High)
-def calculate_burnout(row):
+def calculate_burnout(row: pd.Series) -> int:
     score = 0
     if row['Sleep_Duration'] < 5.5:
         score += 2
@@ -49,7 +49,7 @@ def calculate_burnout(row):
 
 df_clean['Burnout_Risk'] = df_clean.apply(calculate_burnout, axis=1)
 
-# 5. Train the Random Forest Model
+# 5. Train the Random Forest ModelS
 X = df_clean[features + ['Temperature_C']]
 y = df_clean['Burnout_Risk']
 
