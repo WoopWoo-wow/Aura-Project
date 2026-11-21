@@ -1,26 +1,30 @@
 import os
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+import bcrypt
 import httpx
 import joblib
+import jwt
 import pandas as pd
 import psycopg
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
 load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
-DEMO_USER = "00000000-0000-0000-0000-000000000001"  # JWT auth replaces this later
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_HOURS = 24
 
 app = FastAPI(title="AURA API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten to your Vercel URL on deploy
+    allow_origins=["*"],  # tighten to your frontend URL on deploy
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -34,7 +38,101 @@ def db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
-# ---- Request models ----
+# =====================  AUTH  =====================
+bearer = HTTPBearer()
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+def create_token(user_id: str) -> str:
+    exp = datetime.now(timezone.utc) + timedelta(hours=JWT_HOURS)
+    return jwt.encode({"sub": user_id, "exp": exp}, JWT_SECRET, algorithm="HS256")
+
+
+def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> str:
+    """Reads the login token and returns the user_id. Used by every protected endpoint."""
+    try:
+        payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=["HS256"])
+        return payload["sub"]
+    except Exception:
+        raise HTTPException(401, "Invalid or expired token. Please log in again.")
+
+
+class RegisterIn(BaseModel):
+    username: str = Field(min_length=3, max_length=30)
+    password: str = Field(min_length=8, max_length=72)
+    display_name: str = Field(min_length=1, max_length=40)
+    target_sleep_hours: float = Field(default=8.0, ge=4, le=12)
+    worst_habit: str = Field(default="all-nighters", max_length=40)
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/register")
+def register(body: RegisterIn):
+    username = body.username.strip().lower()
+    with db() as conn:
+        exists = conn.execute(
+            "select 1 from users where lower(username) = %s", (username,)
+        ).fetchone()
+        if exists:
+            raise HTTPException(409, "That username is already taken.")
+        user = conn.execute(
+            """insert into users (username, password_hash, display_name,
+                                  target_sleep_hours, worst_habit)
+               values (%s, %s, %s, %s, %s)
+               returning user_id""",
+            (username, hash_password(body.password), body.display_name.strip(),
+             body.target_sleep_hours, body.worst_habit),
+        ).fetchone()
+        conn.commit()
+    user_id = str(user["user_id"])
+    return {"access_token": create_token(user_id), "token_type": "bearer"}
+
+
+@app.post("/api/auth/login")
+def login(body: LoginIn):
+    username = body.username.strip().lower()
+    with db() as conn:
+        user = conn.execute(
+            "select user_id, password_hash from users where lower(username) = %s",
+            (username,),
+        ).fetchone()
+    # same message for wrong username or wrong password, so nobody can probe usernames
+    if not user or not user["password_hash"] or not verify_password(
+        body.password, user["password_hash"]
+    ):
+        raise HTTPException(401, "Invalid username or password.")
+    return {"access_token": create_token(str(user["user_id"])), "token_type": "bearer"}
+
+
+@app.get("/api/me")
+def me(user_id: str = Depends(get_current_user)):
+    with db() as conn:
+        user = conn.execute(
+            """select username, display_name, target_sleep_hours, worst_habit,
+                      affection_points, current_mood_state
+               from users where user_id = %s""",
+            (user_id,),
+        ).fetchone()
+    if not user:
+        raise HTTPException(404, "User not found.")
+    return user
+
+
+# =====================  REQUEST MODELS  =====================
 class SleepIn(BaseModel):
     hours_slept: float = Field(ge=0, le=24)
     caffeine_cups: int = Field(default=0, ge=0, le=20)
@@ -49,11 +147,7 @@ class PredictIn(BaseModel):
     sleep_quality: int = Field(ge=1, le=10)
 
 
-class CheckinIn(PredictIn):
-    log_date: Optional[date] = None
-
-
-# ---- Persona ----
+# =====================  PERSONA  =====================
 def companion_line(d: dict) -> str:
     """Placeholder persona text, grounded in real DB numbers.
     Later this gets swapped for a Gemini call using the same dict."""
@@ -81,23 +175,23 @@ def affection_tier(points: int) -> str:
     return "warm"
 
 
-def predict_line(level: int, body: PredictIn, temp: float, tier: str) -> str:
+def predict_line(level: int, body: "PredictIn", temp: float, tier: str) -> str:
     """AURA's reaction to the ML result. Numbers come from the model and
     inputs; the tier only changes how warm she sounds (cold = no praise, never cruel)."""
     h = body.sleep_duration
     c = body.caffeine_intake
     lines = {
-        2: {  # High risk
+        2: {
             "cold": f"{h}h of sleep, {c} cups of coffee, {temp} degrees outside. Burnout risk is high. Rest early tonight and cut the caffeine.",
             "neutral": f"H-Hmph! {h}h of sleep and {c} cups of coffee at {temp} degrees?! Your burnout risk is high, idiot. Sleep early tonight!",
             "warm": f"Hey... {h}h of sleep isn't enough and your risk is high. I-I'm not worried or anything, but please rest tonight, okay?",
         },
-        1: {  # Moderate risk
+        1: {
             "cold": f"Burnout risk is moderate. {h}h of sleep is not enough. Take a break and sleep on time tonight.",
             "neutral": f"Hmph. Moderate risk. You're not in trouble yet, but {h}h of sleep isn't great. Don't push it.",
-            "warm": f"Moderate risk... you're holding on, but I'm watching you. Get a proper rest tonight, alright?",
+            "warm": "Moderate risk... you're holding on, but I'm watching you. Get a proper rest tonight, alright?",
         },
-        0: {  # Low risk
+        0: {
             "cold": "Burnout risk is low. Keep your routine as it is.",
             "neutral": "Low risk. Acceptable. Don't get comfortable, though.",
             "warm": "L-Low risk! ...Good job. It's not like I was cheering for you or anything!",
@@ -106,17 +200,13 @@ def predict_line(level: int, body: PredictIn, temp: float, tier: str) -> str:
     return lines[level][tier]
 
 
-# ---- Weather (Open-Meteo, Davao City) ----
+# =====================  WEATHER (Open-Meteo, Davao City)  =====================
 def get_davao_temp():
     """Live temperature from Open-Meteo; returns (temp, ok)."""
     try:
         r = httpx.get(
             "https://api.open-meteo.com/v1/forecast",
-            params={
-                "latitude": 7.1907,
-                "longitude": 125.4553,
-                "current": "temperature_2m",
-            },
+            params={"latitude": 7.1907, "longitude": 125.4553, "current": "temperature_2m"},
             timeout=5,
         )
         r.raise_for_status()
@@ -125,157 +215,80 @@ def get_davao_temp():
         return 30.0, False  # fallback so the demo never crashes
 
 
-# ---- Shared Helpers ----
-def run_burnout_model(body: PredictIn, temp: float):
-    row = pd.DataFrame(
-        [
-            {
-                "Sleep_Duration": body.sleep_duration,
-                "Study_Hours": body.study_hours,
-                "Screen_Time": body.screen_time,
-                "Caffeine_Intake": body.caffeine_intake,
-                "Sleep_Quality": body.sleep_quality,
-                "Temperature_C": temp,
-            }
-        ]
-    )
-    level = int(model.predict(row)[0])
-    raw_probs = dict(zip(model.classes_, model.predict_proba(row)[0]))
-    probs = {RISK_LABELS[int(k)]: round(float(v), 2) for k, v in raw_probs.items()}
-    return level, RISK_LABELS[level], probs
-
-
-def fetch_dashboard(conn) -> dict:
-    row = conn.execute(
-        "select * from v_dashboard_today where user_id = %s", (DEMO_USER,)
-    ).fetchone()
+# =====================  PROTECTED ENDPOINTS  =====================
+def build_dashboard(user_id: str) -> dict:
+    with db() as conn:
+        row = conn.execute(
+            "select * from v_dashboard_today where user_id = %s", (user_id,)
+        ).fetchone()
+        history = conn.execute(
+            """select log_date, hours_slept, calculated_sleep_debt
+               from sleep_logs where user_id = %s
+               order by log_date desc limit 7""",
+            (user_id,),
+        ).fetchall()
     if not row:
         raise HTTPException(404, "user not found")
-
-    history = conn.execute(
-        """select log_date, hours_slept, caffeine_cups, calculated_sleep_debt,
-                  study_hours, screen_time, sleep_quality, risk_level, temperature_c
-           from sleep_logs
-           where user_id = %s
-           order by log_date desc limit 7""",
-        (DEMO_USER,),
-    ).fetchall()
-
     row["companion_message"] = companion_line(row)
     row["history"] = list(reversed(history))
     return row
 
 
-def get_affection_points(conn) -> int:
-    try:
-        u = conn.execute(
-            "select affection_points from users where user_id = %s",
-            (DEMO_USER,),
-        ).fetchone()
-        return int(u["affection_points"]) if u else 0
-    except Exception:
-        return 0
-
-
-# ---- Endpoints ----
 @app.get("/api/dashboard")
-def dashboard():
-    with db() as conn:
-        return fetch_dashboard(conn)
-
-
-@app.post("/api/checkin")
-def checkin(body: CheckinIn):
-    """Unified daily check-in: fetches weather, runs ML model, saves full log,
-    and returns both the prediction/AURA message and updated dashboard state."""
-    try:
-        d = body.log_date or date.today()
-        temp, weather_ok = get_davao_temp()
-        level, label, probs = run_burnout_model(body, temp)
-
-        with db() as conn:
-            conn.execute(
-                """insert into sleep_logs (
-                       user_id, log_date, hours_slept, caffeine_cups,
-                       study_hours, screen_time, sleep_quality,
-                       risk_level, temperature_c
-                   )
-                   values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   on conflict (user_id, log_date)
-                   do update set hours_slept = excluded.hours_slept,
-                                 caffeine_cups = excluded.caffeine_cups,
-                                 study_hours = excluded.study_hours,
-                                 screen_time = excluded.screen_time,
-                                 sleep_quality = excluded.sleep_quality,
-                                 risk_level = excluded.risk_level,
-                                 temperature_c = excluded.temperature_c""",
-                (
-                    DEMO_USER,
-                    d,
-                    body.sleep_duration,
-                    body.caffeine_intake,
-                    body.study_hours,
-                    body.screen_time,
-                    body.sleep_quality,
-                    level,
-                    temp,
-                ),
-            )
-            conn.commit()
-
-            dash = fetch_dashboard(conn)
-            points = (
-                int(dash["affection_points"])
-                if dash.get("affection_points") is not None
-                else get_affection_points(conn)
-            )
-
-        tier = affection_tier(points)
-        return {
-            **dash,
-            "risk_level": level,
-            "risk_label": label,
-            "risk_probabilities": probs,
-            "temperature_c": temp,
-            "weather_live": weather_ok,
-            "affection_points": points,
-            "affection_tier": tier,
-            "aura_message": predict_line(level, body, temp, tier),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"{type(e).__name__}: {e}")
+def dashboard(user_id: str = Depends(get_current_user)):
+    return build_dashboard(user_id)
 
 
 @app.post("/api/sleep")
-def log_sleep(body: SleepIn):
+def log_sleep(body: SleepIn, user_id: str = Depends(get_current_user)):
     d = body.log_date or date.today()
     with db() as conn:
+        # upsert; the DB triggers compute debt and update mood
         conn.execute(
             """insert into sleep_logs (user_id, log_date, hours_slept, caffeine_cups)
                values (%s, %s, %s, %s)
                on conflict (user_id, log_date)
                do update set hours_slept = excluded.hours_slept,
                              caffeine_cups = excluded.caffeine_cups""",
-            (DEMO_USER, d, body.hours_slept, body.caffeine_cups),
+            (user_id, d, body.hours_slept, body.caffeine_cups),
         )
         conn.commit()
-        return fetch_dashboard(conn)
+    return build_dashboard(user_id)
 
 
 @app.post("/api/predict")
-def predict(body: PredictIn):
+def predict(body: PredictIn, user_id: str = Depends(get_current_user)):
     try:
         temp, weather_ok = get_davao_temp()
-        with db() as conn:
-            points = get_affection_points(conn)
+
+        # affection points decide how warm AURA sounds
+        try:
+            with db() as conn:
+                u = conn.execute(
+                    "select affection_points from users where user_id = %s",
+                    (user_id,),
+                ).fetchone()
+            points = int(u["affection_points"]) if u else 0
+        except Exception:
+            points = 0
         tier = affection_tier(points)
-        level, label, probs = run_burnout_model(body, temp)
+
+        row = pd.DataFrame([{
+            "Sleep_Duration": body.sleep_duration,
+            "Study_Hours": body.study_hours,
+            "Screen_Time": body.screen_time,
+            "Caffeine_Intake": body.caffeine_intake,
+            "Sleep_Quality": body.sleep_quality,
+            "Temperature_C": temp,
+        }])
+        level = int(model.predict(row)[0])
+        probs = dict(zip(model.classes_, model.predict_proba(row)[0]))
         return {
             "risk_level": level,
-            "risk_label": label,
-            "risk_probabilities": probs,
+            "risk_label": RISK_LABELS[level],
+            "risk_probabilities": {
+                RISK_LABELS[int(k)]: round(float(v), 2) for k, v in probs.items()
+            },
             "temperature_c": temp,
             "weather_live": weather_ok,
             "affection_points": points,
