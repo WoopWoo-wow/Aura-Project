@@ -12,7 +12,7 @@ import jwt
 import pandas as pd
 import psycopg
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
@@ -665,4 +665,106 @@ def insights(user_id: str = Depends(get_current_user)):
         "recap": build_recap(last_logs),
         "patterns_unlock_at": MIN_LOGS_FOR_PATTERNS,
         "patterns": build_patterns(total, caf, heat, days),
+    }
+
+
+# =====================  FORECAST-AWARE BEDTIME  =====================
+HOT_NIGHT_C = 28.0       # average evening temperature that counts as hot
+HUMID_NIGHT_PCT = 80.0   # average evening humidity that counts as humid
+MANILA_TZ = timezone(timedelta(hours=8))  # Davao uses Philippine time (UTC+8, no daylight saving)
+
+
+def get_tonight_forecast():
+    """Average forecast temperature and humidity for 9 to 11 PM tonight (Davao).
+    Returns (avg_temp_c, avg_humidity_pct, live). live is False if the call failed."""
+    try:
+        r = httpx.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": 7.1907,
+                "longitude": 125.4553,
+                "hourly": "temperature_2m,relative_humidity_2m",
+                "forecast_days": 2,
+                "timezone": "Asia/Manila",
+            },
+            timeout=5,
+        )
+        r.raise_for_status()
+        hourly = r.json()["hourly"]
+        today = datetime.now(MANILA_TZ).strftime("%Y-%m-%d")
+        wanted = {f"{today}T{hh}:00" for hh in ("21", "22", "23")}
+        temps, hums = [], []
+        for t, temp, hum in zip(
+            hourly["time"], hourly["temperature_2m"], hourly["relative_humidity_2m"]
+        ):
+            if t in wanted and temp is not None and hum is not None:
+                temps.append(temp)
+                hums.append(hum)
+        if not temps:
+            return None, None, False
+        return round(sum(temps) / len(temps), 1), round(sum(hums) / len(hums)), True
+    except Exception:
+        return None, None, False
+
+
+def compute_bedtime(wake_time: str, target: float, debt: float, avg_temp, avg_humidity) -> dict:
+    """Bedtime = wake time - sleep target - extra time for sleep debt - extra for a hot, humid night.
+    These adjustments are simple heuristics, not medical rules."""
+    h, m = map(int, wake_time.split(":"))
+    wake_min = h * 60 + m
+    debt_min = round(min(debt / 8, 1.0) * 60)   # up to 1 hour extra when the debt is large
+    hot_humid = (
+        avg_temp is not None
+        and avg_humidity is not None
+        and avg_temp >= HOT_NIGHT_C
+        and avg_humidity >= HUMID_NIGHT_PCT
+    )
+    heat_min = 30 if hot_humid else 0           # hot, humid nights make it harder to fall asleep
+    total_min = round(target * 60) + debt_min + heat_min
+    bed_min = (wake_min - total_min) % 1440
+    bed_min = (round(bed_min / 5) * 5) % 1440   # nearest 5 minutes
+    return {
+        "bedtime": f"{bed_min // 60:02d}:{bed_min % 60:02d}",
+        "target_sleep_hours": target,
+        "debt_adjustment_min": debt_min,
+        "heat_adjustment_min": heat_min,
+        "hot_humid_night": hot_humid,
+    }
+
+
+@app.get("/api/bedtime")
+def bedtime(
+    wake_time: str = Query("07:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$"),
+    user_id: str = Depends(get_current_user),
+):
+    """Recommended bedtime for tonight, based on the user's target, sleep debt and tonight's forecast."""
+    with db() as conn:
+        row = conn.execute(
+            "select target_sleep_hours, calculated_sleep_debt from v_dashboard_today where user_id = %s",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "user not found")
+
+    target = float(row["target_sleep_hours"])
+    debt = float(row["calculated_sleep_debt"] or 0)
+    avg_temp, avg_humidity, live = get_tonight_forecast()
+    plan = compute_bedtime(wake_time, target, debt, avg_temp, avg_humidity)
+
+    reasons = []
+    if plan["debt_adjustment_min"]:
+        reasons.append(f"you owe {debt}h of sleep")
+    if plan["hot_humid_night"]:
+        reasons.append(f"tonight is hot and humid ({avg_temp} C, {avg_humidity}% humidity)")
+    because = (" That is earlier because " + " and ".join(reasons) + ".") if reasons else ""
+    message = f"Hmph. Be in bed by {plan['bedtime']} to wake up at {wake_time}.{because}"
+    if not live:
+        message += " (No live forecast, so I ignored the weather.)"
+
+    return {
+        **plan,
+        "wake_time": wake_time,
+        "sleep_debt_hours": debt,
+        "forecast": {"avg_temp_c": avg_temp, "avg_humidity_pct": avg_humidity, "live": live, "window": "9-11 PM tonight"},
+        "aura_message": message,
     }
