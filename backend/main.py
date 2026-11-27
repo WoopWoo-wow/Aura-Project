@@ -305,9 +305,40 @@ def predict(body: PredictIn, user_id: str = Depends(get_current_user)):
             "affection_points": points,
             "affection_tier": tier,
             "aura_message": predict_line(level, body, temp, tier),
+            **explain_risk(body, temp),
         }
     except Exception as e:
         raise server_error(e)
+
+
+# =====================  EXPLAINABLE RISK  =====================
+def explain_risk(p: "PredictIn", temp: float) -> dict:
+    """Plain-language reasons for the risk level. These mirror the rules used to build the
+    burnout label in train_model.py, so they explain the label, not the forest's internals."""
+    reasons = []
+
+    if p.sleep_duration < 5.5:
+        reasons.append({"factor": "Sleep duration", "detail": f"{p.sleep_duration}h is under 5.5h", "points": 2})
+    elif p.sleep_duration < 7.0:
+        reasons.append({"factor": "Sleep duration", "detail": f"{p.sleep_duration}h is under 7h", "points": 1})
+
+    if p.sleep_quality <= 4:
+        reasons.append({"factor": "Sleep quality", "detail": f"{p.sleep_quality}/10 is 4 or lower", "points": 2})
+    elif p.sleep_quality <= 6:
+        reasons.append({"factor": "Sleep quality", "detail": f"{p.sleep_quality}/10 is 6 or lower", "points": 1})
+
+    if temp >= 32.0 and p.sleep_duration < 6.5:
+        reasons.append({"factor": "Heat", "detail": f"{temp} C with short sleep", "points": 1})
+
+    load = []
+    if p.study_hours > 6.0:
+        load.append(f"{p.study_hours}h of study")
+    if p.caffeine_intake >= 3:
+        load.append(f"{p.caffeine_intake} cups of coffee")
+    if load:
+        reasons.append({"factor": "Workload", "detail": " and ".join(load), "points": 1})
+
+    return {"rule_score": sum(r["points"] for r in reasons), "reasons": reasons}
 
 
 # =====================  WHAT-IF SIMULATOR  =====================
@@ -472,6 +503,7 @@ def checkin(body: CheckinIn, user_id: str = Depends(get_current_user)):
             "affection_points": points,
             "affection_tier": tier,
             "aura_message": predict_line(level, p, temp, tier),
+            **explain_risk(p, temp),
             "dashboard": build_dashboard(user_id),
         }
     except HTTPException:
