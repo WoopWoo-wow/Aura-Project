@@ -1,3 +1,4 @@
+import logging
 import math
 import os
 from datetime import date, datetime, timedelta, timezone
@@ -37,6 +38,15 @@ RISK_LABELS = {0: "Low", 1: "Moderate", 2: "High"}
 
 def db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+logger = logging.getLogger("aura")
+
+
+def server_error(e: Exception) -> HTTPException:
+    """Log the real error on the server, give the user only a generic message."""
+    logger.exception("Unhandled error: %s", e)
+    return HTTPException(500, "Something went wrong on the server. Please try again.")
 
 
 # =====================  AUTH  =====================
@@ -297,7 +307,7 @@ def predict(body: PredictIn, user_id: str = Depends(get_current_user)):
             "aura_message": predict_line(level, body, temp, tier),
         }
     except Exception as e:
-        raise HTTPException(500, f"{type(e).__name__}: {e}")
+        raise server_error(e)
 
 
 # =====================  WHAT-IF SIMULATOR  =====================
@@ -362,7 +372,7 @@ def whatif(body: WhatIfIn, user_id: str = Depends(get_current_user)):
             "aura_message": message,
         }
     except Exception as e:
-        raise HTTPException(500, f"{type(e).__name__}: {e}")
+        raise server_error(e)
 
 
 # =====================  RECOVERY PLAN (plain math, no ML)  =====================
@@ -467,7 +477,7 @@ def checkin(body: CheckinIn, user_id: str = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, f"{type(e).__name__}: {e}")
+        raise server_error(e)
 
 
 # =====================  INSIGHTS (3-day recap + personal patterns)  =====================
