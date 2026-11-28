@@ -1,0 +1,40 @@
+Class counts: Low=91, Moderate=255, High=154
+Rows: 500
+
+5-fold cross-validation (mean of the folds)
+Model                                   Accuracy  Precision   Recall     F1
+Baseline (always most common class)         0.51       0.17     0.33   0.23
+Logistic Regression                         0.83       0.84     0.80   0.81
+Decision Tree (depth 5)                     0.91       0.90     0.92   0.91
+Random Forest (100 trees)                   0.91       0.93     0.90   0.91
+
+Precision, recall and F1 are macro averages (each risk level counts equally).
+
+Best model by F1: Random Forest (100 trees)
+
+Confusion matrix on the 20% test split (rows = actual, columns = predicted)
+                Low  Moderate      High
+Low              14         4         0
+Moderate          0        48         3
+High              0         8        23
+
+              precision    recall  f1-score   support
+
+         Low       1.00      0.78      0.88        18
+    Moderate       0.80      0.94      0.86        51
+        High       0.88      0.74      0.81        31
+
+    accuracy                           0.85       100
+   macro avg       0.89      0.82      0.85       100
+weighted avg       0.86      0.85      0.85       100
+
+Random Forest feature importance (how much each input drives the prediction)
+  Sleep_Duration     0.44
+  Sleep_Quality      0.29
+  Temperature_C      0.09
+  Study_Hours        0.08
+  Screen_Time        0.06
+  Caffeine_Intake    0.05
+
+Limitation: labels come from rules on these same inputs and the temperature column is
+simulated, so these scores measure how well a model learns the rules, not real burnout.
